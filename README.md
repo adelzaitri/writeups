@@ -43,17 +43,7 @@ The same sections in the same order, so they can be read against each other:
 - **How I found it** — honestly, including the leads that died. "I expected X, found
   the guard, went looking at Y instead" is more useful than a clean narrative.
 
-Two standing rules:
 
-**Say what the tooling did and did not do.** Where a harness produced the evidence,
-it says so, and it says the finding came from reading. Overclaiming what a tool
-discovered is the fastest way to have a writeup discounted by anyone who knows the
-area.
-
-**A decline is published too.** *The finding was real, confirmed, fixed, and still
-earned no identifier* is sharper evidence of method than a clean accept, because it
-shows the difference between what was proved and what was granted. Those sit next to
-the accepts, not in a drawer.
 
 ---
 
