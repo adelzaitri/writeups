@@ -1,0 +1,32 @@
+target: langfuse
+lead: 1
+captured: 2026-08-06T13:22:12Z
+repo: https://github.com/langfuse/langfuse
+tag: v4.4.0
+sha: 6eac2f37d766d940e2fc93de90f7ba715405aee4
+
+images:
+CONTAINER                       REPOSITORY                     TAG                 PLATFORM            IMAGE ID            SIZE                CREATED
+rl-langfuse-clickhouse-1        clickhouse/clickhouse-server   25.12               linux/amd64         0e76d9807edf        867MB               292 years ago
+rl-langfuse-langfuse-web-1      langfuse/langfuse              4.4.0               linux/amd64         753d01f2195e        1.31GB              292 years ago
+rl-langfuse-langfuse-worker-1   langfuse/langfuse-worker       4.4.0               linux/amd64         7e11d9fbc67c        1.4GB               292 years ago
+rl-langfuse-minio-1             cgr.dev/chainguard/minio       latest              linux/amd64         40c338eccda7        170MB               292 years ago
+rl-langfuse-postgres-1          postgres                       17                  linux/amd64         1edc8e87e531        454MB               292 years ago
+rl-langfuse-redis-1             redis                          7                   linux/amd64         c0a0a2a0551f        113MB               292 years ago
+
+registry digests (docker image inspect, captured 2026-08-06T13:33:01Z):
+  langfuse/langfuse:4.4.0 -> langfuse/langfuse@sha256:434f228500ba1e1e0f3deaa6dc412827330c5e9f01fba841c6122ff8c46a9323
+  langfuse/langfuse-worker:4.4.0 -> langfuse/langfuse-worker@sha256:0efc56f424044db9cf7bc9c0881d104b28d31764fda956be2238d1ed269124f1
+  clickhouse/clickhouse-server:25.12 -> clickhouse/clickhouse-server@sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6
+  cgr.dev/chainguard/minio:latest -> cgr.dev/chainguard/minio@sha256:66d17146a8c0c4ab97ec8e0b0ae03390be0311644032830d67d580359bde5764
+  postgres:17 -> postgres@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
+  redis:7 -> redis@sha256:e9b2e45ecd47fbb69b877cf8d045d5cccaaaed52524b6e098b4abe8212994f73
+
+NOTE — stock compose pulls the floating majors langfuse/langfuse:4 and
+langfuse-worker:4. Pinned to :4.4.0 for citability. Docker Hub also
+publishes tag sha-6eac2f3, matching the source commit exactly.
+
+GOTCHA — re-running 'Lab.ts evidence' to refresh this file SILENTLY
+ROTATES the markers. First mint was CVEHUNT-1-8663EBCF-*; the run below
+used CVEHUNT-1-0BA2D314-*. No objects had been created under the first
+mint, so the bundle is consistent. Mint once, before creating anything.

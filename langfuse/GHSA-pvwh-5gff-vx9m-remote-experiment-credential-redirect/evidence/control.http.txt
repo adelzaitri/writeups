@@ -1,0 +1,47 @@
+### CONTROL 1 — principal B (MEMBER) updates the config WITHOUT changing the URL.
+### requestHeaders omitted. Intended behaviour: stored secrets are preserved.
+
+POST /api/trpc/datasets.upsertRemoteExperiment HTTP/1.1
+Host: 127.0.0.1:20502
+Content-Type: application/json
+Cookie: next-auth.session-token=<REDACTED — principal B, project MEMBER>
+
+{"json":{"projectId":"cmshjwr6n0007qr082mi0h9c7","datasetId":"cmshjyaku000dqr08at5388g5","url":"https://example.com/run","defaultPayload":"{}","enabled":true}}
+
+--- response ---
+HTTP/1.1 200 OK
+X-Robots-Tag: noindex
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+Document-Policy: js-profiling
+Permissions-Policy: autoplay=*, fullscreen=*, microphone=*
+x-frame-options: SAMEORIGIN
+Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate
+Pragma: no-cache
+Expires: 0
+Set-Cookie: next-auth.session-token=<REDACTED lab session token>; Path=/; Expires=Sat, 05 Sep 2026 13:29:56 GMT; HttpOnly; SameSite=Lax
+content-type: application/json
+Vary: trpc-accept, accept, Accept-Encoding
+Date: Thu, 06 Aug 2026 13:29:56 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+{"result":{"data":{"json":{"datasetId":"cmshjyaku000dqr08at5388g5","unencryptedSecretKey":null},"meta":{"values":{"unencryptedSecretKey":["undefined"]}}}}}
+
+########################################################################
+### CONTROL 2 — the SAME operation on the guarded sibling router.
+### Change a stored credential's destination WITHOUT supplying a new
+### secret. This is the product's own standard for this exact pattern
+### (the CVE-2026-41487 fix). Expected: refused.
+########################################################################
+
+POST /api/trpc/llmApiKey.update HTTP/1.1
+Host: 127.0.0.1:20502
+Content-Type: application/json
+Cookie: next-auth.session-token=<REDACTED — principal A, project OWNER>
+
+{"json":{"id":"cmshk1vch000pqr08zymxe9i5","projectId":"cmshjwr6n0007qr082mi0h9c7","provider":"cvehunt-lab","adapter":"openai","baseURL":"http://172.19.0.8/v1"}}
+
+--- response ---
+{"error":{"json":{"message":"Secret key is required when changing the base URL","code":-32600,"data":{"code":"BAD_REQUEST","httpStatus":400,"path":"llmApiKey.update","zodError":null,"errorName":null,"stack":null}},"meta":{"values":{"data.stack":["undefined"]}}}}
