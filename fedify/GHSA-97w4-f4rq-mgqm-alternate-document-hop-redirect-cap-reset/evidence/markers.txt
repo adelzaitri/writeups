@@ -1,0 +1,5 @@
+principal A marker: CVEHUNT-0001-9CAC98CC-A
+principal B marker: CVEHUNT-0001-9CAC98CC-B
+
+Every object created in this run carries one of these. A marker appearing
+across the boundary is the finding; 'a document came back' is not.

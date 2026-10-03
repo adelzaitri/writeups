@@ -1,0 +1,96 @@
+opa — Lead 1 — CONTROL RUNS
+allow_net enforcement working, four ways, before anything is broken.
+
+Target      : open-policy-agent/opa
+Pinned tag  : v1.21.0
+Pinned SHA  : dc6269f2c648bbbece4b76fa1fc3dbb7b61cc7b6
+Image       : openpolicyagent/opa:1.21.0
+Image digest: sha256:9e0010512cf405e66bfd7b89394f514e56fe0464822df0527e780344ab151450
+Image commit: dc6269f2c648bbbece4b76fa1fc3dbb7b61cc7b6-dirty  (== the pinned SHA)
+Captured    : 2026-09-27T00:41:45Z
+Markers     : A = CVEHUNT-1-87B0BCF6-A (the ALLOWED destination)
+              B = CVEHUNT-1-87B0BCF6-B (the destination OUTSIDE the allowlist)
+
+Capabilities files are `opa capabilities --current` at the pin (206 builtins) with an
+`allow_net` key added by hand. `opa capabilities --current` does not emit that key and
+there is no CLI flag for it, so hand-editing is the only way to express the restriction.
+
+  caps-allow-listener.json   "allow_net": ["rl-opa-listener"]
+  caps-allow-example.json    "allow_net": ["allowed.example.com"]
+  caps-none.json             "allow_net": []
+
+Two synthetic receivers. The UNIX socket is a bind-mounted file, so the unix:// rows run
+with NO network namespace at all (`--network none`); the TCP rows use a bridge network
+with a sidecar listener that publishes nothing to the host.
+
+================================================================================
+ROW P — POSITIVE CONTROL. allow_net names the destination, so the request arrives.
+Without this row a reader cannot tell a working check from a broken harness.
+================================================================================
+
+$ docker run --rm --network rl-opa-net -v $LAB:/w:ro openpolicyagent/opa:1.21.0 \
+    eval --capabilities /w/caps-allow-listener.json --strict-builtin-errors -f json \
+    'resp = http.send({"method":"get","url":"http://rl-opa-listener:19999/CVEHUNT-1-87B0BCF6-A-P-positive"})'
+
+RESULT: status_code=404 (the path does not exist on the receiver — arrival is the point)
+
+Receiver's own log (`docker logs rl-opa-listener`), verbatim:
+Serving HTTP on 0.0.0.0 port 19999 (http://0.0.0.0:19999/) ...
+172.20.0.3 - - [27/Sep/2026 00:41:00] code 404, message File not found
+172.20.0.3 - - [27/Sep/2026 00:41:00] "GET /CVEHUNT-1-87B0BCF6-A-P-positive HTTP/1.1" 404 -
+
+================================================================================
+ROW C1 — NEGATIVE CONTROL. A TCP host that is not in allow_net is refused.
+================================================================================
+
+$ docker run --rm --network rl-opa-net -v $LAB:/w:ro openpolicyagent/opa:1.21.0 \
+    eval --capabilities /w/caps-allow-example.json --strict-builtin-errors -f json \
+    'resp = http.send({"method":"get","url":"http://rl-opa-listener:19999/CVEHUNT-1-87B0BCF6-A-C1-disallowed-host"})'
+
+RESPONSE (verbatim from the -f json output):
+{
+  "message": "http.send: disallowed host: rl-opa-listener",
+  "code": "eval_builtin_error"
+}
+
+Nothing carrying CVEHUNT-1-87B0BCF6-A-C1-disallowed-host appears in the receiver log above.
+
+================================================================================
+ROW C2 — NEGATIVE CONTROL. The SAME unix:// URL shape, authority not in allow_net.
+This is the row that makes ROW A mean something: the check is on, and on this URL shape.
+================================================================================
+
+$ docker run --rm --network none -v $LAB:/w openpolicyagent/opa:1.21.0 \
+    eval --capabilities /w/caps-allow-example.json --strict-builtin-errors -f json \
+    'resp = http.send({"method":"get","url":"unix://notallowed.example.com/CVEHUNT-1-87B0BCF6-B-C2?socket=%2Fw%2Fprobe.sock"})'
+
+RESPONSE (verbatim):
+{
+  "message": "http.send: disallowed host: notallowed.example.com",
+  "code": "eval_builtin_error"
+}
+
+================================================================================
+ROW C3 — NEGATIVE CONTROL. allow_net: [] is documented as "NO host can be connected to"
+(v1/ast/capabilities.go:98). The same authority that ROW A allows is refused here.
+================================================================================
+
+$ docker run --rm --network none -v $LAB:/w openpolicyagent/opa:1.21.0 \
+    eval --capabilities /w/caps-none.json --strict-builtin-errors -f json \
+    'resp = http.send({"method":"get","url":"unix://allowed.example.com/CVEHUNT-1-87B0BCF6-B-C3?socket=%2Fw%2Fprobe.sock"})'
+
+RESPONSE (verbatim):
+{
+  "message": "http.send: disallowed host: allowed.example.com",
+  "code": "eval_builtin_error"
+}
+
+================================================================================
+STATE OF THE UNIX-SOCKET RECEIVER AFTER ALL FOUR CONTROL ROWS
+================================================================================
+
+$ cat unix.log
+=== receiver listening on <LAB>/probe.sock ===
+
+Zero requests. The receiver logs the verbatim bytes of anything that reaches it, so an
+empty log is the positive statement that the socket was never dialled during the controls.

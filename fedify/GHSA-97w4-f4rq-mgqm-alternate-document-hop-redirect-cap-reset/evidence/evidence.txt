@@ -1,0 +1,37 @@
+# Raw output — ./run-fix-review.sh, 2026-09-29T08:27:23Z, node v24.18.0
+# @fedify/vocab-runtime 2.3.8 / @fedify/fedify 2.3.8, maintainers' diff hand-applied to dist
+
+### 1. original report probe, PATCHED build (maxRedirection: 2)
+{"mode":"control","maxRedirection":2,"stopAfter":60,"marker":"CVEHUNT","outcome":"THREW","error":"FetchError: http://127.0.0.1:47214/CVEHUNT-302-2: Too many redirections (3)","elapsedMs":33,"requestsServed":3,"firstPathsServed":["/CVEHUNT-a","/CVEHUNT-302-1","/CVEHUNT-302-2"],"boundHeld":true}
+{"mode":"header","maxRedirection":2,"stopAfter":60,"marker":"CVEHUNT","outcome":"THREW","error":"FetchError: http://127.0.0.1:47425/CVEHUNT-b: Redirect loop detected: http://127.0.0.1:47425/CVEHUNT-a","elapsedMs":24,"requestsServed":2,"firstPathsServed":["/CVEHUNT-a","/CVEHUNT-b"],"boundHeld":true}
+{"mode":"html","maxRedirection":2,"stopAfter":60,"marker":"CVEHUNT","outcome":"THREW","error":"FetchError: http://127.0.0.1:47266/CVEHUNT-b: Redirect loop detected: http://127.0.0.1:47266/CVEHUNT-a","elapsedMs":49,"requestsServed":2,"firstPathsServed":["/CVEHUNT-a","/CVEHUNT-b"],"boundHeld":true}
+{"mode":"signal","maxRedirection":2,"stopAfter":60,"marker":"CVEHUNT","abortedAfterMs":1500,"elapsedMs":31,"requestsServed":2,"outcome":"THREW:FetchError:http://127.0.0.1:47461/CVEHUNT-b: Redirect loop detected: http://127.0.0.1:47461/CVEHUNT-a","stillRunningMsAfterAbort":0,"requestsPerSecond":65,"firstPathsServed":["/CVEHUNT-a","/CVEHUNT-b"],"boundHeld":true}
+
+### 2. maxRedirection honoured on the alternate hop? unauthenticated loader
+{"mode":"control","maxRedirection":0,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46254/n/0: Too many redirections (1)","requestsServed":1,"hopsFollowed":0,"honouredMaxRedirection":true}
+{"mode":"header","maxRedirection":0,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46669/n/20: Too many redirections (21)","requestsServed":21,"hopsFollowed":20,"honouredMaxRedirection":false}
+{"mode":"html","maxRedirection":0,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46258/n/20: Too many redirections (21)","requestsServed":21,"hopsFollowed":20,"honouredMaxRedirection":false}
+{"mode":"control","maxRedirection":2,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46466/n/2: Too many redirections (3)","requestsServed":3,"hopsFollowed":2,"honouredMaxRedirection":true}
+{"mode":"header","maxRedirection":2,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46608/n/20: Too many redirections (21)","requestsServed":21,"hopsFollowed":20,"honouredMaxRedirection":false}
+{"mode":"html","maxRedirection":2,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46358/n/20: Too many redirections (21)","requestsServed":21,"hopsFollowed":20,"honouredMaxRedirection":false}
+{"mode":"control","maxRedirection":50,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46704/n/50: Too many redirections (51)","requestsServed":51,"hopsFollowed":50,"honouredMaxRedirection":true}
+{"mode":"header","maxRedirection":50,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46749/n/20: Too many redirections (21)","requestsServed":21,"hopsFollowed":20,"honouredMaxRedirection":true}
+{"mode":"html","maxRedirection":50,"outcome":"THREW","error":"FetchError: http://127.0.0.1:46225/n/20: Too many redirections (21)","requestsServed":21,"hopsFollowed":20,"honouredMaxRedirection":true}
+
+### 3. abort signal reaches the alternate hop, PATCHED
+{"outcome":"THREW:abort-reason-preserved","elapsedMs":407,"abortedAfterMs":400,"requestsServed":4}
+
+### 4. authenticated loader, PATCHED (maxRedirection 2 and 50)
+{"mode":"control","maxRedirection":2,"outcome":"THREW","error":"FetchError: http://127.0.0.1:48326/n/2: Too many redirections (3)","requestsServed":3}
+{"mode":"header","maxRedirection":2,"outcome":"THREW","error":"FetchError: http://127.0.0.1:48314/n/20: Too many redirections (21)","requestsServed":21}
+{"mode":"control","maxRedirection":50,"outcome":"THREW","error":"FetchError: http://127.0.0.1:48175/n/20: Too many redirections (21)","requestsServed":21}
+{"mode":"header","maxRedirection":50,"outcome":"THREW","error":"FetchError: http://127.0.0.1:48116/n/20: Too many redirections (21)","requestsServed":21}
+
+### 5. authenticated loader, 2.3.8 BASELINE, control chain, maxRedirection 50
+{"mode":"control","maxRedirection":50,"outcome":"THREW","error":"FetchError: http://127.0.0.1:48751/n/50: Too many redirections (51)","requestsServed":51}
+
+### 6. Accept-Signature challenge redirect, doubleKnock called as send.ts calls it
+{"outcome":"RESOLVED 200","requestsServed":1000,"elapsedMs":3710,"stopAfterWasOurs":true}
+
+### 7. same server, through the PATCHED authenticated document loader
+{"outcome":"THREW FetchError: http://127.0.0.1:49963/b: Redirect loop detected: http://127.0.0.1:49963/a","requestsServed":4,"elapsedMs":46,"stopAfterWasOurs":false}

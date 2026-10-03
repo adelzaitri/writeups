@@ -1,0 +1,78 @@
+target: docling  (docling-project/docling)
+lead: L1
+captured: 2026-09-27T05:37:01Z
+repo: https://github.com/docling-project/docling
+tag: v2.130.0
+sha: 92fc74c36bbd20db9838d7665d38900e5c958319
+
+upstream reconciliation (checked 2026-09-27):
+  GitHub latest release = v2.130.0, published 2026-09-22T15:33:48Z
+  PyPI docling          = 2.130.0, uploaded 2026-09-22T15:38:13
+  the pin IS the current release — no re-pin needed
+  NOT FIXED: main's image_resource_loader.py is byte-identical to the pin.
+
+Gate 1a:
+  docling/backend/utils/image_resource_loader.py
+    3979f8a1d310f26f23118bc0e45e4fd205fdd6b713e4008740d850c14faa9ea7
+  byte-identical between the installed wheel and the tag. lab.sh up asserts it.
+
+install note, and it matters for reproducibility:
+  The metapackage "docling" resolves to docling-slim[standard], which pulls torch
+  (a 554MB wheel plus a CUDA stack). Nothing on the ImageResourceLoader path touches it.
+  This lab installs docling-slim[format-html]==2.130.0 instead — 343MB — and lab.sh up
+  ASSERTS torch is absent, so the result cannot be attributed to a different dependency set.
+
+dependency versions under test (all load-bearing for this finding):
+  python 3.12.14
+  urllib3 2.8.0
+  requests 2.34.2
+  The differential also holds on urllib3 1.26: the authority regex is byte-identical in
+  1.26.20 (URI_RE, line 21) and 2.8.0 (_URI_RE, line 23) -- (?://([^\\/?#]*))?
+  pyproject.toml:54 permits requests>=2.32.2,<3.0.0, so the whole supported range is affected.
+
+duplicate check (2026-09-27):
+  7 published advisories on docling (NOT 6 — GHSA-4xhp-xg4w-8ppm, published 2026-08-24, is
+  repo-published but absent from OSV and from the local advisory-database clone):
+    GHSA-4xhp-xg4w-8ppm  (no CVE)        medium  Arbitrary local file read via draw:image xlink:href (ODF)
+    GHSA-q29v-xc37-wh5m  CVE-2026-47214  high    Unsafe URI and Path Handling in HTML Backend
+    GHSA-pj2v-ggqh-cmq2  CVE-2026-44016  high    Unsafe Playwright-based HTML Rendering
+    GHSA-cjqg-rq2h-2fvj  CVE-2026-44017  high    Unsafe Zip Extraction in EasyOCR Model Download
+    GHSA-m88r-rg27-5xfg  CVE-2026-44020  high    Unsafe XML Entity Expansion in USPTO Backend
+    GHSA-r3xg-rg9j-67fv  CVE-2026-44018  medium  Unsafe Archive Extraction and XML Parsing (METS-GBS)
+    GHSA-2j5p-7p5m-cvqr  CVE-2026-44022  medium  Path Traversal via LaTeX includegraphics/input
+  NOT A DUPLICATE of any. The closest, GHSA-4xhp, is the OPPOSITE report: there the loader was
+  never called; here it is called and its guard is bypassed. They compose — the 4xhp fix
+  (commit 6ee9965a, 2026-08-24) deliberately routed the ODF backend INTO this guard.
+  Issue tracker: "urlparse urllib3" -> 0, "rebinding" -> 0, "image_resource_loader" -> 0,
+  "backslash url" -> 4 (all Windows path-export cosmetics). No prior art on the mechanism.
+
+sibling package, and a hypothesis worth one hour:
+  docling-core's equivalent guard (_is_safe_url, docling_core/utils/file.py:61) appears to be
+  SAVED by a re-serialisation step the docling side lacks — file.py:163-164 runs the URL
+  through TypeAdapter(AnyHttpUrl) and passes the NORMALISED string to both the check and the
+  fetch. NOT VERIFIED: whether pydantic's AnyHttpUrl collapses a backslash in the authority was
+  not tested. If it does not, this is also an incomplete fix of CVE-2026-44023 (8.6, UI:N).
+  One command decides it; it was out of scope for this lab and is flagged, not claimed.
+
+provenance of the guard (git log --follow on image_resource_loader.py):
+  d876cbcf 2026-07-01 fix(md): load embedded base64 images in Markdown backend (#3725)
+                      -- introduced validate_url_safety; blame confirms :48, :199, :227
+  6ee9965a 2026-08-24 fix(odf): resolve draw:image xlink:href through ImageResourceLoader (#4015)
+                      -- the fix for GHSA-4xhp, which routed a SIXTH backend into this guard
+  So this is NOT an incomplete fix of any published docling advisory — the guard postdates the
+  2026-06-02 advisory burst by a month. Do not frame it that way.
+
+disclosure route (.github/SECURITY.md, read in full):
+  PREFERRED: GitHub Private Vulnerability Reporting, Security tab -> "Report a vulnerability"
+  Alternative: deepsearch-core@zurich.ibm.com (private maintainer list)
+  "Each report is acknowledged and analyzed by the core maintainers within 3 working days."
+  "Credit attribution when the vulnerability is published"
+  No bounty platform. ZERO pre-rejected categories — read end to end, there is no out-of-scope
+  list of any kind. The only prohibition is on PUBLIC disclosure before a fix.
+  SECURITY.md's last substantive change was 2026-05-08, BEFORE the 2026-06-02 advisory burst,
+  so the policy was not rewritten mid-burst.
+
+harness:
+  lab.sh (included as evidence/repro.sh) — ./lab.sh all run end to end from clean, exit 0
+  phases: up (incl. Gate 1a + torch-absence assertion) -> parsers -> control x2 -> attack
+          -> reverse -> repeat 3 -> down

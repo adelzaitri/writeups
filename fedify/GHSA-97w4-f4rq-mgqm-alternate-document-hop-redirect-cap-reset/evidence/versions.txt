@@ -1,0 +1,49 @@
+target: fedify  (fedify-dev/fedify)
+lead: 0001
+captured: 2026-09-27T01:13:28Z
+repo: https://github.com/fedify-dev/fedify
+tag: 2.3.8
+sha: 12119e5c4772c757804e18e9d80401163ccc2bc0
+
+upstream reconciliation (checked 2026-09-27):
+  npm dist-tag "latest"  @fedify/vocab-runtime  2.3.8   published 2026-09-21T16:26:41Z
+  npm dist-tag "latest"  @fedify/fedify         2.3.8   published 2026-09-21T16:25:41Z
+  the pin IS the current release of both packages — no re-pin needed
+  a 2.4.0-dev.2030 prerelease exists (2026-09-26); it is not a release and was not tested
+  STILL PRESENT ON main at capture time: the same bare one-argument calls at
+    packages/vocab-runtime/src/docloader.ts:201 and :263
+
+Gate 1a — the published artifact vs the pinned tag:
+  fedify ships src/ inside the npm tarball, so this is exact rather than inferred.
+  node_modules/@fedify/vocab-runtime/src/docloader.ts  ==  packages/vocab-runtime/src/docloader.ts @ 2.3.8
+    sha256 aca59c96e9daaa3449d82893cd8f10920792c1e3206e2c3c653918e7cf4f1781
+  node_modules/@fedify/vocab-runtime/src/url.ts        ==  packages/vocab-runtime/src/url.ts @ 2.3.8
+    sha256 4137f393248f791a366c5a44cee2b6aba4df245552d52ff824514f6b742f1716
+  and the cited call appears in the compiled dist/mod.js, so it is in the code that runs.
+  The line numbers in this bundle (192, 244) are the TAG's line numbers, because the shipped
+  source is the same file.
+
+npm integrity of what was actually downloaded:
+  @fedify/fedify  2.3.8  sha512-a+nHqKe/yk9NKfB1nhXCcjPWv1XPIqJNKaNWiOfbXyb+5fFGFdYxtmKGwTMWj36GMLmRLedSXkJllkjbDQW2jw==
+  @fedify/uri-template  2.3.8  sha512-7tK3PY/YDQADwCt1aDQ0JWky4f4Mvm4X0wzD/n/jhfq8Vzo/VPNmFfEynHSvnWqka9yGHlJ0m4nhoTi4MTzFrg==
+  @fedify/vocab  2.3.8  sha512-UgNpKSuM1vZp+ZzsUSN5Y9me6Gb+Nkee2cGC5xOPBSO20Z7h55QmucmWPFSPW+mUFVyeECBcc5CMHGTFI/lhjg==
+  @fedify/vocab-runtime  2.3.8  sha512-EyWmYhMC7oB4wTblshZMsQAGp3ADbSU3xy4r2Ybc1l2sdRbn1A/4n9u9HUnYzVsOU2v8pP9BuivFt0FSOfn+dA==
+  @fedify/vocab-tools  2.3.8  sha512-yq8c7bg8/8Cz/yknryNkGbauuwez9wO1eHYzzdXj8+iVa4bB6Ty27r3Ccqp21p6479imP/vZVE5+B9t83P7SWg==
+  @fedify/webfinger  2.3.8  sha512-veks2AS2Isco29G12lBP0k/mVgfsU0TaNyPprAN8AnZF8h+7eeJ+Baj0apdHWbtfbE6tD9s7Kqdd532w6xs+zg==
+
+affected range, each line tip installed into its own tree and run through the same probe:
+  @fedify/vocab-runtime        2.3.8     UNBOUNDED  (60 requests, our stop)
+  @fedify/vocab-runtime        2.2.13    UNBOUNDED  (60 requests, our stop)
+  @fedify/vocab-runtime        2.1.24    UNBOUNDED  (60 requests, our stop)
+  @fedify/vocab-runtime        2.0.28    UNBOUNDED  (60 requests, our stop)
+  @fedify/fedify               1.10.11   UNBOUNDED  (60 requests, our stop)
+  @fedify/fedify               1.9.12    UNBOUNDED  (60 requests, our stop)
+
+runtime:
+  node v24.18.0
+  npm  11.16.0
+  every server bound to 127.0.0.1; nothing left this host
+
+harness:
+  lab.sh (included as evidence/repro.sh) — `./lab.sh all` run end to end from a clean state, exit 0
+  `./lab.sh full` adds the range phase (six further npm installs)

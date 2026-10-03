@@ -1,0 +1,77 @@
+docling — Lead L1 — CONTROL RUNS
+The SSRF guard working, before anything is broken.
+
+Project    : docling-project/docling
+Pinned tag : v2.130.0 (current release; PyPI docling 2.130.0 agrees)
+Pinned SHA : 92fc74c36bbd20db9838d7665d38900e5c958319
+Under test : the published wheel, docling-slim[format-html]==2.130.0
+Captured   : 2026-09-27T05:36:20Z
+Marker     : CVEHUNT-L1-5E9E4128-B
+
+GATE 1A:
+  docling/backend/utils/image_resource_loader.py is byte-identical in the installed wheel and
+  at tag v2.130.0 — sha256 3979f8a1d310f26f23118bc0e45e4fd2
+
+  Note on the install: the metapackage `docling` pulls `docling-slim[standard]`, which drags
+  in torch (a 554MB wheel plus a CUDA stack). Nothing on this path touches it, so the lab
+  installs `docling-slim[format-html]` instead — 343MB. `lab.sh up` asserts torch is ABSENT,
+  so the result cannot be attributed to a different dependency set.
+
+================================================================================
+THE PROMISE — the guard's own docstring, verbatim
+================================================================================
+
+    """Reject URLs that resolve to a non-public IP address.
+
+    Guards against SSRF by requiring the URL's host to resolve to a globally
+    routable address. Private, loopback, link-local, reserved, multicast, and
+    unspecified addresses are refused.
+
+And a docling maintainer, in public, three weeks before this release — issue #4154,
+*"AsciiDoc backend loads local and remote images without explicit opt-in"*, opened by
+`ceberam`, describing the standard the other backends are held to:
+
+  "remote fetches are blocked by default and subject to SSRF guards (validate_url_safety)
+   when enabled."
+
+================================================================================
+CONTROL 1 — the feature is off by default
+================================================================================
+
+$ ImageResourceLoader(enable_remote_fetch=False).load_image_data("http://127.0.0.1:18099/<marker>.png", None)
+
+ outcome        : REFUSED (OperationNotAllowed)
+ error          : Fetching remote resources is only allowed when set explicitly. Set options.enable_remote_fetch=True.
+ socket_opened  : False
+
+`backend_options.py:25-27` and `:28-30` — both flags default `False`:
+
+    enable_remote_fetch: bool = Field(
+        False, description="Enable remote resource fetching."
+    )
+    enable_local_fetch: bool = Field(
+        False, description="Enable local resource fetching."
+    )
+
+================================================================================
+CONTROL 2 — with the feature ON, the guard refuses a loopback URL
+================================================================================
+
+$ ImageResourceLoader(enable_remote_fetch=True).load_image_data("http://127.0.0.1:18099/<marker>.png", None)
+
+ outcome        : REFUSED (ValueError)
+ error          : Access to restricted IP address not allowed: 127.0.0.1
+ socket_opened  : False
+
+**This is the load-bearing control.** It is docling's own guard, raising its own error text,
+on the destination the attack row reaches. Without it, "a request arrived" proves nothing.
+
+================================================================================
+A NOTE ON WHERE THE ERROR GOES
+================================================================================
+
+`create_image_ref` (`image_resource_loader.py:162-177`) catches `OperationNotAllowed`,
+`ValueError` and four other types into a `warnings.warn` and returns `None`. So at the level
+the HTML backend calls, a refusal is a warning and a successful SSRF is indistinguishable from
+a successful image load. The rows above call `load_image_data` directly so the guard's own
+exception text is visible; the evidence for the attack row is the listener log either way.

@@ -6,7 +6,7 @@
 |---|---|
 | **Target** | `<org/repo>`, <deployment mode> |
 | **Affected** | `>= x.y.z, < a.b.c`. <State any release line that is NOT affected> |
-| **Fixed in** | `<version>`, released <date> — [PR #N](url), merge commit `<sha>` |
+| **Fixed in** | `<version>`, released <date> — [PR #N](<fix-pr-url>), merge commit `<sha>` |
 | **Class** | `CWE-NNN: <name>` |
 | **Severity** | CVSS 3.1 `<vector>` → **<score> <rating>** |
 | **Identifier** | `<GHSA-id>` / `<CVE-id>`, or the honest absence of one |
@@ -116,7 +116,7 @@ Guarded sibling, prior fix commits, or the variant that is still open.
 
 ## The fix, as shipped
 
-[PR #N](url), merged <date>, released in `<version>`.
+[PR #N](<fix-pr-url>), merged <date>, released in `<version>`.
 
 ```js
 <the shipped guard>

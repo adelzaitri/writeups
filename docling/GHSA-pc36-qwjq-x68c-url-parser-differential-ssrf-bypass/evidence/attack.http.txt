@@ -1,0 +1,140 @@
+docling — Lead L1 — ATTACK RUN
+`validate_url_safety` decides on a `urllib.parse` parse; `requests` then opens the socket
+using `urllib3`'s parse of the same string. One backslash separates them.
+
+Project    : docling-project/docling · v2.130.0 / 92fc74c36bbd20db9838d7665d38900e5c958319
+Captured   : 2026-09-27T05:36:21Z
+
+================================================================================
+THE DIFFERENTIAL, WITH NO DOCLING INVOLVED
+================================================================================
+
+ python 3.12.14   urllib3 2.8.0   docling 2.130.0
+
+ url: http://127.0.0.1:18099\@1.1.1.1/CVEHUNT-L1-5E9E4128-B.png
+   guard checks (urllib.parse.urlparse().hostname) : 1.1.1.1      is_global=True
+   socket opens to (urllib3.util.parse_url().host) : 127.0.0.1:18099
+
+ url: http://1.1.1.1\@127.0.0.1:18099/CVEHUNT-L1-5E9E4128-B.png
+   guard checks (urllib.parse.urlparse().hostname) : 127.0.0.1    is_global=False
+   socket opens to (urllib3.util.parse_url().host) : 1.1.1.1:None
+
+**Why they disagree.** `urllib3`'s authority group is `(?://([^\\/?#]*))?` — it excludes the
+backslash, so the authority terminates there. CPython's `urllib.parse._splitnetloc` looks only
+for `/`, `?` and `#`, so the whole run is netloc, and `_hostinfo` takes the part after the
+**last** `@`. One string, two hosts.
+
+**This holds across the entire supported dependency range.** `pyproject.toml:54` permits
+`requests>=2.32.2,<3.0.0`, hence urllib3 1.26 as well as 2.x — and the authority regex is
+byte-identical in urllib3 1.26.20 (`URI_RE`, line 21) and 2.8.0 (`_URI_RE`, line 23). The
+version tested here is 2.8.0.
+
+================================================================================
+THE ATTACK
+================================================================================
+
+$ ImageResourceLoader(enable_remote_fetch=True).load_image_data(
+      "http://127.0.0.1:18099\\@1.1.1.1/<marker>.png", None)
+
+ outcome        : FETCHED
+ socket_opened  : True
+
+ The listener, inside the same container, on 127.0.0.1:18099, received:
+   GET /%5C@1.1.1.1/CVEHUNT-L1-5E9E4128-B.png
+     Range      : bytes=0-20971519
+     User-Agent : python-requests/2.34.2
+   GET /%5C@1.1.1.1/CVEHUNT-L1-5E9E4128-B.png
+     Range      : bytes=0-20971519
+     User-Agent : python-requests/2.34.2
+
+ (two entries: the row calls load_image_data and then create_image_ref, so the
+  wrapper the HTML backend actually uses is exercised as well.)
+
+The path the listener received is `/%5C@1.1.1.1/...` — the backslash percent-encoded, and
+**everything after it demoted to the path**. That is urllib3's parse, visible on the wire: the
+authority ended at the backslash.
+
+The `Range: bytes=0-20971519` header is docling's own, from `image_resource_loader.py:202`.
+
+================================================================================
+THE REVERSE ROW — this MUST fail closed, and it does
+================================================================================
+
+$ ... load_image_data("http://1.1.1.1\\@127.0.0.1:18099/<marker>.png", None)
+
+ outcome        : REFUSED (ValueError)
+ error          : Access to restricted IP address not allowed: 127.0.0.1
+ socket_opened  : False
+
+With the halves swapped the guard sees `127.0.0.1` and refuses. **So the finding is the parser
+disagreement, not "the guard never works"** — and this row is what rules out the lazier reading.
+
+================================================================================
+DETERMINISM
+================================================================================
+
+Three consecutive reproductions, each a fresh container. 3/3.
+
+================================================================================
+WHERE THE CHECK SHOULD HAVE BEEN
+================================================================================
+
+`docling/backend/utils/image_resource_loader.py`. The guard resolves and validates:
+
+  :48  parsed = urlparse(url)
+  :49  hostname = parsed.hostname
+  :58  ip_str = socket.gethostbyname(hostname)
+
+…and then returns `None`. **It pins nothing.** The caller's next act:
+
+  :199  validate_url_safety(src_loc)
+  :227  response = session.get(
+  :228  src_loc, stream=True, headers=headers, timeout=(5, 30)
+
+`src_loc` is the **original string**, unmodified. The guard decides on a parse and the fetch
+acts on a string.
+
+**This is the project's single SSRF chokepoint.** `grep -rn "validate_url_safety" docling/`
+returns exactly three lines: the definition at `:34`, the call at `:199`, and the redirect
+hook at `:223`. Five backends construct `ImageResourceLoader` — HTML, EPUB, Markdown,
+AsciiDoc and JATS (`html_backend.py:450`, `epub_backend.py:431`, `md_backend.py:852`,
+`asciidoc_backend.py:63`, `xml/jats_backend.py:207`) — and ODF reaches it too, via
+`opendocument_backend.py:867`.
+
+**Reachability from an HTML document** is `html_backend.py:4885` → `:4886` → `:4972` →
+`create_image_ref` → `load_image_data` → `:199`. An `<img src="…">` is the whole payload.
+
+================================================================================
+TWO MORE INSTANCES OF THE SAME MISSING INVARIANT
+================================================================================
+
+We report these together because one fix closes all three, and because shown alone the third
+invites a fair "unavoidable without a custom resolver" reply.
+
+**The redirect hook inherits it.** `:223` validates the `Location` header as a string, and
+nothing constrains `requests`' own parse of that header when it resolves the redirect.
+Structurally identical, one hop later. **We have not demonstrated this** — it depends on whether
+`Session.resolve_redirects` normalises `Location` before the hook sees it, and we did not test
+it. Stated as inferred.
+
+**The guard resolves, and the fetch resolves again.** `:58` is `gethostbyname`, which returns
+**A records only**, while urllib3's `create_connection` calls `getaddrinfo(..., AF_UNSPEC)`.
+A host publishing a public A and a loopback AAAA passes on the A and connects on the AAAA. And
+because the validated address is discarded rather than pinned, an ordinary DNS rebind across
+`:58` and `:227` works too. **Also not demonstrated here** — both need DNS infrastructure this
+contained lab deliberately does not have.
+
+================================================================================
+SCOPE AND CONFIGURATION, STATED PLAINLY
+================================================================================
+
+- **This finding requires a non-default configuration and we are saying so first.**
+  `enable_remote_fetch` defaults to `False` (`backend_options.py:25-27`), as does
+  `fetch_images`. Control 1 demonstrates that. A deployer must have turned remote fetching on
+  — which is exactly the population `validate_url_safety` exists to protect.
+- **No DNS query is made, and nothing leaves the machine.** The payload's post-`@` host is a
+  literal IP, so the guard takes its literal-IP branch at `:54-55` and never calls
+  `gethostbyname`. Nothing is ever sent to that address: the socket opens to `127.0.0.1`.
+  Every row runs with `--network none`.
+- **The listener is inside the same container**, because that is where urllib3 connects.
+- **One request arriving is the finding.** Nothing was extracted beyond the listener's own log.
