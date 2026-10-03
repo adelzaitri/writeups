@@ -40,6 +40,44 @@ authority is decorative — it becomes the `Host:` header and nothing else.
 applied at all**, and there is no configuration that turns it on. `allow_net: []`, documented as
 *"NO host can be connected to"*, still permits it.
 
+### The mechanism, in one picture
+
+The check reads the authority and passes. The rewrite that selects the real destination runs
+afterwards and is never re-verified. The boxed controls on the right are the rows that prove the
+check is genuinely on — including `allow_net: []`, which refuses and still does not stop this.
+
+```mermaid
+flowchart TB
+    POL["Untrusted Rego policy calls http.send<br/><code>unix://allowed.example.com/p?socket=/var/run/docker.sock</code>"]
+    POL --> CHK{"<b>allow_net check</b> — verifyURLHost, http.go:475<br/>reads parsedURL.Host, and nothing else"}
+
+    CHK -->|"authority is in allow_net"| PASS(["PASSES"])
+    PASS --> RW["<b>useSocket</b>, http.go:386 — runs AFTER the check<br/>socket := v.Get('socket') &nbsp;&nbsp; v.Del('socket')"]
+    RW --> DIAL["<b>DialContext is replaced</b><br/>func(ctx, _ , _ ) — the network and address<br/>arguments are DISCARDED; it dials 'unix', socket"]
+    DIAL --> SOCK(["Any UNIX socket the process can open.<br/>Attacker-chosen method, path, headers and body.<br/>Full response returned into the policy."])
+    SOCK --> NS["Still works under <code>--network none</code> —<br/>no network namespace is involved,<br/>so the sandbox was never in the path"]
+
+    CHK -.-> CTRL
+    subgraph CTRL["The controls — the check IS on"]
+      direction TB
+      C2["<b>C2</b> authority not in allow_net<br/>→ refused: disallowed host"]
+      C3["<b>C3</b> allow_net: [] — documented as<br/>'NO host can be connected to'<br/>→ refused: disallowed host"]
+    end
+
+    GAP["<b>The gap</b><br/>useSocket rewrites the destination<br/><i>after</i> validation, and the result is<br/>never re-verified. The authority only<br/>ever became the Host: header."]
+    RW -.-> GAP
+
+    classDef guard fill:#e8f0fe,stroke:#1a73e8,stroke-width:1px,color:#111
+    classDef bad fill:#fce8e6,stroke:#d93025,stroke-width:1px,color:#111
+    classDef good fill:#e6f4ea,stroke:#137333,stroke-width:1px,color:#111
+    classDef neutral fill:#f1f3f4,stroke:#5f6368,color:#111
+    class CHK,PASS guard
+    class RW,DIAL,SOCK,NS bad
+    class C2,C3 good
+    class POL neutral
+    class GAP neutral
+```
+
 ---
 
 ## The architecture that made it possible
