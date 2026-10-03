@@ -39,6 +39,42 @@ So for `http://127.0.0.1:18099\@1.1.1.1/x.png`:
 **The guard decides on a parse. The fetch acts on a string.** One backslash is the whole
 exploit.
 
+### The mechanism, in one picture
+
+One string, parsed twice, by two libraries that disagree about where the authority ends. The
+left branch decides; the right branch connects.
+
+```mermaid
+flowchart TB
+    URL["ONE string, supplied by the document<br/><code>http://127.0.0.1:18099#92;@1.1.1.1/x.png</code>"]
+
+    URL --> G["<b>The guard</b><br/>validate_url_safety<br/>parses with urllib.parse"]
+    URL --> R["<b>The fetch</b><br/>session.get(src_loc)<br/>parses with urllib3"]
+
+    G --> GP["_splitnetloc stops only at / ? #<br/>so the backslash is ordinary<br/>_hostinfo takes the host after the LAST @"]
+    R --> RP["authority regex is (?://([^#92;/?#]*))?<br/>so the backslash ENDS the authority"]
+
+    GP --> GH["host = <b>1.1.1.1</b><br/>is_global = True"]
+    RP --> RH["host = <b>127.0.0.1:18099</b><br/>backslash demoted into the path"]
+
+    GH --> OK(["PASSES — returns None<br/>nothing is pinned"])
+    RH --> CONN(["CONNECTS to loopback<br/>carrying docling's own Range header"])
+
+    OK -.->|"the guard's decision<br/>constrains nothing"| CONN
+
+    G2["<b>The shipped fix, 2.132.0</b><br/>resolve once, require EVERY address global,<br/>bind the pool to a validated address"]
+    CONN --> G2
+
+    classDef guard fill:#e8f0fe,stroke:#1a73e8,stroke-width:1px,color:#111
+    classDef fetch fill:#fce8e6,stroke:#d93025,stroke-width:1px,color:#111
+    classDef neutral fill:#f1f3f4,stroke:#5f6368,color:#111
+    classDef fixed fill:#e6f4ea,stroke:#137333,stroke-width:1px,color:#111
+    class G,GP,GH,OK guard
+    class R,RP,RH,CONN fetch
+    class URL neutral
+    class G2 fixed
+```
+
 ---
 
 ## The architecture that made it possible

@@ -40,6 +40,49 @@ So a remote host answering with a two-node alternate-document cycle drives an **
 through the same entry point the parent advisory used — an unauthenticated `POST` to an inbox —
 and the caller cannot stop it.
 
+### The mechanism, in one picture
+
+The control at the top shows the patched hop refusing after three requests. The loop at the
+bottom is the same loader on the other kind of hop, where a one-argument call resets the cap,
+the visited set, and the caller's cancellation signal.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Atk as Attacker
+    participant FD as Fedify inbox<br/>verifyRequest to fetchKeyInternal
+    participant LD as load(url, options,<br/>redirected=0, visited=empty)
+    participant GR as getRemoteDocument(url,<br/>response, fetch)
+    participant Host as Attacker hosts A and B
+
+    Atk->>FD: ONE signed POST to /inbox,<br/>keyId points at attacker host
+
+    Note over LD,Host: CONTROL — an ordinary 3xx chain. The CVE-2026-34148 bound HOLDS
+    FD->>LD: load(A)
+    LD->>Host: GET A
+    Host-->>LD: 302 Location A2
+    LD->>LD: load(A2, options, redirected+1, visited)<br/>state THREADED through
+    LD-->>FD: throws "Too many redirections (3)"<br/>after exactly 3 requests
+
+    Note over LD,Host: THE FINDING — the other kind of hop
+    FD->>LD: load(A)
+    LD->>Host: GET A
+    Host-->>LD: 200 plus Link header: rel=alternate points to B
+    LD->>GR: getRemoteDocument(A, response, load)
+
+    loop never terminates — no bound is in scope
+        GR->>LD: fetch(B) — ONE argument
+        Note right of LD: redirected resets to 0 (default param)<br/>visited resets to empty (default param)<br/>options is undefined, so the caller's<br/>AbortSignal is discarded too
+        LD->>Host: GET B
+        Host-->>LD: 200 plus Link header: rel=alternate points back to A
+        GR->>LD: fetch(A) — ONE argument, state resets again
+        LD->>Host: GET A
+        Note over GR: both guards compare only against SELF,<br/>altUri.href !== docUrl.href,<br/>so a TWO-node cycle is never detected
+    end
+
+    Note over FD,Host: measured: 2,827 outbound requests in 6s, about 470/s.<br/>Caller aborted at 1,500ms — still running 4,500ms later.
+```
+
 ---
 
 ## The architecture that made it possible

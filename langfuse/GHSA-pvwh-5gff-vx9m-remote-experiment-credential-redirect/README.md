@@ -37,6 +37,38 @@ Langfuse already treated this exact pattern as a vulnerability elsewhere in the
 product, and had shipped the guard for it twice. The dataset router was missed both
 times.
 
+### The mechanism, in one picture
+
+Two requests that differ in exactly one field. The first is the feature working as designed;
+the second is the finding. Nothing in between compares the new URL against the stored one.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner as OWNER
+    actor Member as MEMBER
+    participant LF as upsertRemoteExperiment
+    participant DB as encrypted columns
+    participant Evil as MEMBER-controlled host
+
+    Owner->>LF: configure remote experiment<br/>url = legit.example.com<br/>header = "Bearer SECRET"
+    LF->>DB: store url, encrypted header, signing secret
+
+    Note over Member,DB: CONTROL 1 — preservation is intended
+    Member->>LF: update, SAME url, requestHeaders OMITTED
+    LF->>DB: read stored headers, preserve
+    LF-->>Member: 200 OK — correct, a secret should not need retyping
+
+    Note over Member,Evil: THE FINDING — one field changes
+    Member->>LF: update, url = evil.example.com, requestHeaders OMITTED
+    Note right of LF: input.url is NEVER compared with<br/>dataset.remoteExperimentUrl
+    LF->>DB: read stored headers, preserve anyway
+    LF-->>Member: 200 OK
+    Member->>LF: triggerRemoteExperiment — same datasets:CUD scope
+    LF->>Evil: POST /collect<br/>authorization: Bearer SECRET<br/>x-langfuse-signature: t=...,v1=...
+    Note over Evil: OWNER's credential + a valid<br/>Langfuse signature, delivered
+```
+
 ---
 
 ## The architecture that made it possible
