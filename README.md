@@ -28,46 +28,6 @@ broken, and a determinism log.** Nothing here rests on a single lucky run.
 
 ---
 
-## How the four relate
-
-Four different products, four different bug classes — and the same shape underneath. Every
-writeup has its own diagram of the specific mechanism; this is what they have in common.
-
-```mermaid
-flowchart LR
-    T["<b>The through-line</b><br/>in all four findings<br/>—<br/>a check ran and passed,<br/>then did not constrain<br/>what happened next"]
-
-    T --> A["<b>Langfuse</b><br/>preserve-on-omit<br/>not conditioned on<br/>the destination"]
-    T --> B["<b>Docling</b><br/>validate, then<br/>RE-PARSE the same<br/>string differently"]
-    T --> C["<b>OPA</b><br/>validate, then<br/>REWRITE the<br/>destination"]
-    T --> D["<b>Fedify</b><br/>bound the hop, then<br/>RESET the bound on<br/>re-entry"]
-
-    A --> A2["a lower-privileged role<br/>receives an admin's<br/>credential, plus a<br/>valid signature"]
-    B --> B2["the guard checks<br/>1.1.1.1 while the<br/>client connects<br/>to 127.0.0.1"]
-    C --> C2["egress allowlist<br/>reaches any local<br/>UNIX socket"]
-    D --> D2["one request becomes<br/>2,827 outbound,<br/>and uncancellable"]
-
-    A2 --> P["<b>The invariant</b><br/>none of them held<br/>—<br/>the thing you checked<br/>must be the thing<br/>you act on<br/>—<br/>not a second derivation<br/>of the same input"]
-    B2 --> P
-    C2 --> P
-    D2 --> P
-
-    classDef root fill:#f1f3f4,stroke:#5f6368,stroke-width:1px,color:#111
-    classDef mech fill:#e8f0fe,stroke:#1a73e8,stroke-width:1px,color:#111
-    classDef impact fill:#fce8e6,stroke:#d93025,stroke-width:1px,color:#111
-    classDef lesson fill:#e6f4ea,stroke:#137333,stroke-width:1px,color:#111
-    class T root
-    class A,B,C,D mech
-    class A2,B2,C2,D2 impact
-    class P lesson
-```
-
-That bottom box is the only generalisation in this repo I would defend in an interview. It is
-also why the controls matter: in each case the check **works** — it refuses the obvious input.
-What it does not do is bind the thing it approved to the thing that happens next.
-
----
-
 ## If you are reviewing this quickly
 
 The four things worth knowing, and where to check each one:
