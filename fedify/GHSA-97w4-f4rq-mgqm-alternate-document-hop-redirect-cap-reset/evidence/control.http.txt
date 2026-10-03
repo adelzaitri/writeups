@@ -1,0 +1,87 @@
+fedify — Lead 0001 — CONTROL RUN
+The redirect bound that CVE-2026-34148 / GHSA-gm9m-gwc4-hwgp added, working on the hop it
+was written for.
+
+Project      : fedify-dev/fedify
+Pinned tag   : 2.3.8   (npm dist-tag `latest` for both packages at capture time)
+Pinned SHA   : 12119e5c4772c757804e18e9d80401163ccc2bc0
+Under test   : the PUBLISHED npm artifacts @fedify/vocab-runtime@2.3.8 and @fedify/fedify@2.3.8
+Captured     : 2026-09-27T01:12:31Z
+Marker       : CVEHUNT-0001-9CAC98CC-B — carried in every URL path the loader is induced to fetch
+
+GATE 1A — the artifact IS the tag, not merely named after it:
+  node_modules/@fedify/vocab-runtime/src/docloader.ts is byte-identical to
+  packages/vocab-runtime/src/docloader.ts at tag 2.3.8
+      sha256 aca59c96e9daaa3449d82893cd8f10920792c1e3206e2c3c653918e7cf4f1781
+  node_modules/@fedify/vocab-runtime/src/url.ts likewise
+      sha256 4137f393248f791a366c5a44cee2b6aba4df245552d52ff824514f6b742f1716
+  and the cited one-argument call is present in the COMPILED bundle
+  node_modules/@fedify/vocab-runtime/dist/mod.js — i.e. in the code that actually runs.
+
+================================================================================
+WHAT THE PROJECT PROMISES — CHANGES.md, verbatim, for the release that fixed CVE-2026-34148
+================================================================================
+
+ -  Limited the number of HTTP redirects followed by the remote document
+    loaders and signed HTTP fetches to mitigate resource exhaustion during
+    remote key and document resolution.  [[CVE-2026-34148] by Abhinav Jaswal]
+
+ -  Stopped the remote document loaders and signed HTTP fetches from
+    revisiting the same URL within a redirect chain, preventing
+    self-referential redirect loops.  [[CVE-2026-34148] by Abhinav Jaswal]
+
+Two claims: a bound on the number of redirects the **remote document loaders** follow, to
+mitigate **resource exhaustion during remote key and document resolution**; and a stop on
+revisiting the same URL within a chain. The control below shows both working. The attack run
+shows the loader taking a second kind of hop on which neither applies, on exactly the path
+that sentence names — remote key resolution.
+
+================================================================================
+THE CONTROL — an ordinary 302 chain
+================================================================================
+
+$ cd $LAB && MARK=CVEHUNT-0001-9CAC98CC-B PORT=45871 node probe.mjs control
+
+The loader is constructed as:
+
+    getDocumentLoader({ allowPrivateAddress: true, maxRedirection: 2 })
+
+and the local server answers every request with `302 Location: <next>`.
+
+RESULT (the probe's own JSON line, verbatim):
+{
+    "mode": "control",
+    "maxRedirection": 2,
+    "stopAfter": 60,
+    "marker": "CVEHUNT-0001-9CAC98CC-B",
+    "outcome": "THREW",
+    "error": "FetchError: http://127.0.0.1:45871/CVEHUNT-0001-9CAC98CC-B-302-2: Too many redirections (3)",
+    "elapsedMs": 35,
+    "requestsServed": 3,
+    "firstPathsServed": [
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-302-1",
+        "/CVEHUNT-0001-9CAC98CC-B-302-2"
+    ],
+    "boundHeld": true
+}
+
+Three requests — the first, plus the two redirects the caller allowed — and then the documented
+error. The bound holds, the loop is bounded, and the harness demonstrably works.
+
+**The attack run below changes exactly one thing: the KIND of hop the server offers.** Same
+package, same loader construction, same `maxRedirection: 2`, same `allowPrivateAddress`.
+
+================================================================================
+THE ONE CONFIGURATION CHANGE, STATED PLAINLY
+================================================================================
+
+`allowPrivateAddress: true` is set in every row, control and attack alike. It is needed only
+because the lab is contained on 127.0.0.1, and it gates `validatePublicUrl`
+(packages/vocab-runtime/src/docloader.ts:318-320) — nothing else. It has no relationship to
+the redirect counter or the visited-URL set.
+
+**It is not load-bearing, and the control is the proof:** the cap fires with the flag set. If
+the flag disabled the bound, the control could not have thrown. In a real deployment the flag
+stays at its default `false` and the destination is the attacker's own public host, so the
+guard is not in the path at all.

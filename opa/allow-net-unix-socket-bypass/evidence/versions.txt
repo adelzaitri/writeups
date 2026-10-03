@@ -1,0 +1,56 @@
+target: opa  (open-policy-agent/opa)
+lead: 1
+captured: 2026-09-27T00:42:34Z
+repo: https://github.com/open-policy-agent/opa
+tag: v1.21.0
+sha: dc6269f2c648bbbece4b76fa1fc3dbb7b61cc7b6
+
+upstream reconciliation (checked 2026-09-27):
+  latest release at check time: v1.21.0, published 2026-09-24T13:44:11Z
+  the pin IS the current release — no re-pin needed
+
+image under test:
+  openpolicyagent/opa:1.21.0
+  digest       sha256:9e0010512cf405e66bfd7b89394f514e56fe0464822df0527e780344ab151450
+  Version: 1.21.0
+  Build Commit: dc6269f2c648bbbece4b76fa1fc3dbb7b61cc7b6-dirty
+  Build Timestamp: 2026-09-24T13:11:11Z
+  Build Hostname: 
+  Go Version: go1.27.1
+  Platform: linux/amd64
+  Rego Version: v1
+  WebAssembly: available
+
+Gate 1a — image vs pinned tag:
+  image Build Commit = dc6269f2c648bbbece4b76fa1fc3dbb7b61cc7b6-dirty
+  pinned SHA         = dc6269f2c648bbbece4b76fa1fc3dbb7b61cc7b6
+  MATCH. The code that was read at the tag is the code that ran.
+  (The "-dirty" suffix comes from upstream's own build of this image. Nothing was
+   built on this host: the image was pulled and its digest is recorded above.)
+
+capabilities at the pin:
+  builtins emitted by `opa capabilities --current`: 206
+  `allow_net` key emitted by `opa capabilities --current`: NO
+  `--capabilities` flag, verified against the binary's own --help at this pin:
+    build            YES        run      no
+    check            YES        exec     no
+    eval             YES        inspect  no
+    fmt              YES        sign     no
+    test             YES        bench    no   <-- see correction below
+    oracle           no, but `oracle find-definition` YES
+  CORRECTION to the lead's claim that the flag exists on `bench` and `oracle`:
+    cmd/bench.go:62 allocates `capabilities: newCapabilitiesFlag()` but never calls
+    addCapabilitiesFlag, so `opa bench` exposes no such flag — the value is constructed
+    and discarded. cmd/oracle.go:127 registers it on the `find-definition` subcommand
+    (addCapabilitiesFlag(findDefinitionCommand.Flags(), ...)), not on `opa oracle`.
+    Neither changes Lead 1: `eval` and `test` alone carry the sandbox population, and
+    the Go SDK path (rego.Capabilities) is unaffected by CLI flag registration.
+    This does bear on Lead 2, whose argument is about where the flag is absent.
+
+receivers:
+  unix socket : python3 unix-receiver.py (synthetic, logs verbatim bytes)
+  tcp         : python:3.12-alpine + http.server, sidecar on bridge net rl-opa-net,
+                publishes nothing to the host
+
+harness:
+  lab.sh (included as evidence/repro.sh) — run end to end (`./lab.sh all`) from a clean state, exit 0

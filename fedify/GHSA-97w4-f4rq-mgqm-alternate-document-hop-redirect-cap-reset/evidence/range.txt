@@ -1,0 +1,6 @@
+@fedify/vocab-runtime        2.3.8     UNBOUNDED  (60 requests, our stop)
+@fedify/vocab-runtime        2.2.13    UNBOUNDED  (60 requests, our stop)
+@fedify/vocab-runtime        2.1.24    UNBOUNDED  (60 requests, our stop)
+@fedify/vocab-runtime        2.0.28    UNBOUNDED  (60 requests, our stop)
+@fedify/fedify               1.10.11   UNBOUNDED  (60 requests, our stop)
+@fedify/fedify               1.9.12    UNBOUNDED  (60 requests, our stop)

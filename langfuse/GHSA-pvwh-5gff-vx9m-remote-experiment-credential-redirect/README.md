@@ -9,7 +9,7 @@
 | **Fixed in** | `4.16.0`, released 2026-08-21 — [PR #16307](https://github.com/langfuse/langfuse/pull/16307), merge commit `58cc5006` |
 | **Class** | `CWE-522: Insufficiently Protected Credentials` |
 | **Severity** | CVSS 3.1 `AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:L/A:N` → **8.5 High** |
-| **Identifier** | Advisory draft `GHSA-pvwh-5gff-vx9m`, unpublished. No CVE assigned — see [Outcome](#outcome) |
+| **Identifier** | Advisory draft `GHSA-pvwh-5gff-vx9m`, unpublished. No CVE assigned; CNA-LR request pending — see [Outcome](#outcome) |
 | **Reported by** | Adel Zaitri |
 
 ---
@@ -398,6 +398,7 @@ it does not.
 | 2026-08-21 | Fix released in `4.16.0` |
 | 2026-09-23 | Advisory draft closed **without publication**. CVE declined: *"We considered this fix as additional hardening and not requiring a CVE."* |
 | 2026-10-02 | `https://github.com/advisories/GHSA-pvwh-5gff-vx9m` still returns 404. No public artifact exists |
+| 2026-10-02 | CVE ID requested from the CVE Program's CNA of Last Resort. Request filed; awaiting assignment |
 
 The finding was confirmed, fixed, and shipped. It has no identifier and no published
 advisory, which means operators who had a dataset remote experiment configured with
@@ -409,7 +410,8 @@ severity. It is that the same class in the sibling router was assigned CVE-2026-
 and published, with an affected range that stops at `3.167.0` — so the public record
 now contains a version range that tells 4.x operators they are patched against a
 pattern they were exposed to until `4.16.0`. A CVE request to the CVE Program's CNA
-of Last Resort is pending on that basis.
+of Last Resort was filed on 2026-10-02 on that basis and is pending. If it is
+declined too, that outcome gets added to this table rather than removed from it.
 
 **That disagreement is recorded here rather than argued further with the
 maintainer.** He fixed it quickly, he fixed it better than I proposed, and his PR
